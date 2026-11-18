@@ -1,0 +1,169 @@
+{
+  "outputDir": "output",
+  "defaults": {
+    "runs": 5,
+    "cooldownSec": 10,
+    "cache": "cold",
+    "warmup": false,
+    "categories": [
+      "performance"
+    ]
+  },
+  "probes": {
+    "latencyHost": null,
+    "throughputUrl": "https://speed.cloudflare.com/__down?bytes=10000000"
+  },
+  "thresholds": {
+    "power": {
+      "requireAC": true,
+      "warnPercent": 30,
+      "poorPercent": 15
+    },
+    "cpuLoadPct": {
+      "warn": 20,
+      "poor": 60
+    },
+    "freeMemGb": {
+      "warn": 4,
+      "poor": 2
+    },
+    "thermalSpeedLimitPct": {
+      "warn": 99,
+      "poor": 70
+    },
+    "thermalTempC": {
+      "warn": 80,
+      "poor": 90
+    },
+    "latencyMs": {
+      "warn": 100,
+      "poor": 250
+    },
+    "jitterMs": {
+      "warn": 15,
+      "poor": 50
+    },
+    "packetLossPct": {
+      "warn": 1,
+      "poor": 5
+    },
+    "downloadMbps": {
+      "warn": 20,
+      "poor": 5
+    },
+    "wifiSignalDbm": {
+      "warn": -70,
+      "poor": -80
+    }
+  },
+  "regression": {
+    "scorePoints": 5,
+    "lcpPct": 10,
+    "tbtPct": 15,
+    "clsAbs": 0.02,
+    "fcpPct": 10,
+    "siPct": 10
+  },
+  "profiles": [
+    {
+      "formFactor": "mobile",
+      "userAgent": null,
+      "throttlingMethod": "simulate",
+      "locale": "en-US",
+      "timezone": null,
+      "colorScheme": "light",
+      "reducedMotion": false,
+      "saveData": false,
+      "blockedUrlPatterns": [],
+      "extraHeaders": {},
+      "id": "moto-g-slow-4g",
+      "name": "Moto G Power · Slow 4G · 4× CPU",
+      "screen": {
+        "width": 412,
+        "height": 823,
+        "deviceScaleFactor": 1.75
+      },
+      "throttling": {
+        "rttMs": 150,
+        "downloadKbps": 1638.4,
+        "uploadKbps": 675,
+        "cpuSlowdownMultiplier": 4
+      }
+    },
+    {
+      "formFactor": "desktop",
+      "userAgent": null,
+      "throttlingMethod": "simulate",
+      "locale": "en-US",
+      "timezone": null,
+      "colorScheme": "light",
+      "reducedMotion": false,
+      "saveData": false,
+      "blockedUrlPatterns": [],
+      "extraHeaders": {},
+      "id": "desktop-cable",
+      "name": "Desktop · Cable · 1× CPU",
+      "screen": {
+        "width": 1350,
+        "height": 940,
+        "deviceScaleFactor": 1
+      },
+      "throttling": {
+        "rttMs": 40,
+        "downloadKbps": 10240,
+        "uploadKbps": 10240,
+        "cpuSlowdownMultiplier": 1
+      }
+    },
+    {
+      "formFactor": "mobile",
+      "userAgent": null,
+      "throttlingMethod": "simulate",
+      "locale": "en-US",
+      "timezone": null,
+      "colorScheme": "light",
+      "reducedMotion": false,
+      "saveData": false,
+      "blockedUrlPatterns": [],
+      "extraHeaders": {},
+      "id": "tablet-fast-4g",
+      "name": "Tablet · Fast 4G · 2× CPU",
+      "screen": {
+        "width": 768,
+        "height": 1024,
+        "deviceScaleFactor": 2
+      },
+      "throttling": {
+        "rttMs": 70,
+        "downloadKbps": 9000,
+        "uploadKbps": 1500,
+        "cpuSlowdownMultiplier": 2
+      }
+    },
+    {
+      "formFactor": "mobile",
+      "userAgent": null,
+      "throttlingMethod": "simulate",
+      "locale": "en-US",
+      "timezone": null,
+      "colorScheme": "light",
+      "reducedMotion": false,
+      "saveData": false,
+      "blockedUrlPatterns": [],
+      "extraHeaders": {},
+      "id": "slow-3g-stress",
+      "name": "Slow 3G stress test · 6× CPU",
+      "screen": {
+        "width": 412,
+        "height": 823,
+        "deviceScaleFactor": 1.75
+      },
+      "throttling": {
+        "rttMs": 400,
+        "downloadKbps": 400,
+        "uploadKbps": 400,
+        "cpuSlowdownMultiplier": 6
+      }
+    }
+  ]
+}
