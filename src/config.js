@@ -3,9 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const CONFIG_PATH = process.env.LT_CONFIG
-  ? path.resolve(process.env.LT_CONFIG)
-  : path.join(ROOT, 'lighthouse-tester.config.json');
+export const CONFIG_PATH = process.env.TIDEWATCH_CONFIG
+  ? path.resolve(process.env.TIDEWATCH_CONFIG)
+  : path.join(ROOT, 'tidewatch.config.json');
 
 const base = {
   userAgent: null,

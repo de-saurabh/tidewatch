@@ -1,4 +1,6 @@
-# Lighthouse Tester
+# Tidewatch
+
+Lighthouse runs that record and grade the conditions they ran under: a tide gauge for your page speed.
 
 Runs Lighthouse in bulk (URLs × environment profiles × N runs), records the machine's conditions
 before, during and after, and writes a report plus a CSV that can be uploaded later as a baseline.
@@ -39,7 +41,7 @@ Each batch is a folder under `output/` (configurable):
 
 ## Config
 
-`lighthouse-tester.config.json` (created on first start) holds profiles, environment thresholds,
+`tidewatch.config.json` (created on first start) holds profiles, environment thresholds,
 regression thresholds, run defaults and probe settings. Edit it by hand or in the UI.
 
 ## Profiles

@@ -77,7 +77,7 @@ export function readResultsCsv(text) {
     for (const v of versions) {
       if (Number(v) !== SCHEMA_VERSION) errors.push(`Unsupported schema_version "${v}" (this app reads version ${SCHEMA_VERSION}).`);
     }
-    if (!rows.some((r) => r.row_type === 'median')) errors.push('No median rows found. Was this file produced by Lighthouse Tester?');
+    if (!rows.some((r) => r.row_type === 'median')) errors.push('No median rows found. Was this file produced by Tidewatch?');
   }
   if (errors.length) return { ok: false, errors, rows: [], info: null };
   const typed = rows.map((r) => {

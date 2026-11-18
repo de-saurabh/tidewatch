@@ -208,6 +208,6 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`Lighthouse Tester: http://localhost:${PORT}`);
+  console.log(`Tidewatch: http://localhost:${PORT}`);
   console.log(`Config: ${CONFIG_PATH}`);
 });

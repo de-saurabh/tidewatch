@@ -537,7 +537,7 @@ main.addEventListener('click', async (e) => {
     try { await saveConfig(cfg); S.editing = null; S.editingOrig = null; pageProfiles(); } catch (err) { toast(err.message, true); }
   }
   else if (act === 'import-profiles') $('#impFile').click();
-  else if (act === 'export-profiles') download('lighthouse-tester-profiles.json', JSON.stringify(S.config.profiles, null, 2), 'application/json');
+  else if (act === 'export-profiles') download('tidewatch-profiles.json', JSON.stringify(S.config.profiles, null, 2), 'application/json');
   else if (act === 'compare-batch') { S.cmp.batchId = el.dataset.id; S.cmp.currentCsv = null; S.cmp.result = null; }
   else if (act === 'run-compare') runCompare();
   else if (act === 'save-settings') saveSettings();

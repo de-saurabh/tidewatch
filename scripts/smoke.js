@@ -15,7 +15,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}/`;
-const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lt-smoke-'));
+const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tidewatch-smoke-'));
 
 try {
   const config = structuredClone(DEFAULT_CONFIG);

@@ -8,7 +8,7 @@ import { runBatch } from './runner/batch.js';
 import { readResultsCsv } from './report/csv.js';
 import { compareRuns } from './report/compare.js';
 
-const USAGE = `Lighthouse Tester CLI
+const USAGE = `Tidewatch CLI
 
   node src/cli.js env [--host <url>]
   node src/cli.js run --url <url> [--url <url> ...] [--profile <id> ...] [--runs N] [--cooldown S]
