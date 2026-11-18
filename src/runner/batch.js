@@ -98,9 +98,10 @@ export function buildRows(batch) {
     profile_name: p.name,
     form_factor: p.formFactor,
     throttling_method: p.throttlingMethod,
-    rtt_ms: p.throttling.rttMs,
-    download_kbps: p.throttling.downloadKbps,
-    cpu_slowdown: p.throttling.cpuSlowdownMultiplier,
+    // The native profile applies no throttling, so these stay blank rather than recording invented values.
+    rtt_ms: p.throttling?.rttMs,
+    download_kbps: p.throttling?.downloadKbps,
+    cpu_slowdown: p.throttling?.cpuSlowdownMultiplier,
   });
 
   const rows = [];

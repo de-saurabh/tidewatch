@@ -230,7 +230,7 @@ async function startRun() {
 
 function pageRun() {
   const cats = [['performance', 'Performance'], ['accessibility', 'Accessibility'], ['best-practices', 'Best practices'], ['seo', 'SEO']];
-  const profiles = S.config.profiles.map((p) => `<label class="choice block"><input type="checkbox" data-profile="${esc(p.id)}" ${S.selected.has(p.id) ? 'checked' : ''}><span style="flex:1">${esc(p.name)}</span><a href="#/profiles" class="small">Edit</a></label>`).join('');
+  const profiles = S.config.profiles.map((p) => `<label class="choice block"><input type="checkbox" data-profile="${esc(p.id)}" ${S.selected.has(p.id) ? 'checked' : ''}><span style="flex:1">${esc(p.name)}</span>${p.id === S.config.defaultProfileId ? '<span class="pill t-Ideal">Default</span>' : ''}<a href="#/profiles" class="small">${p.native ? 'View' : 'Edit'}</a></label>`).join('');
   main.innerHTML = `
     <header class="head"><div><h1>New batch run</h1><p>Check this machine, choose targets and profiles, then run.</p></div>
       <button class="btn primary" id="startBtn" data-act="start" style="height:46px" ${S.progress?.status === 'running' ? 'disabled' : ''}>Start run</button></header>
@@ -349,7 +349,7 @@ function schedulePreview() {
 }
 
 function pageProfiles() {
-  const list = S.config.profiles.map((p) => `<button class="item ${p.id === S.editingOrig ? 'sel' : ''}" data-act="edit-profile" data-id="${esc(p.id)}"><strong>${esc(p.name)}</strong><span class="muted small mono">${esc(p.formFactor)} · ${p.screen.width}×${p.screen.height} · ${p.throttling.rttMs} ms · ${p.throttling.cpuSlowdownMultiplier}×</span></button>`).join('');
+  const list = S.config.profiles.map((p) => `<button class="item ${p.id === S.editingOrig ? 'sel' : ''}" data-act="edit-profile" data-id="${esc(p.id)}"><span class="row" style="justify-content:space-between;flex-wrap:nowrap"><strong>${esc(p.name)}</strong>${p.id === S.config.defaultProfileId ? '<span class="pill t-Ideal">Default</span>' : ''}</span><span class="muted small mono">${p.native ? 'your CPU · your network · no emulation' : `${esc(p.formFactor)} · ${p.screen.width}×${p.screen.height} · ${p.throttling.rttMs} ms · ${p.throttling.cpuSlowdownMultiplier}×`}</span></button>`).join('');
   main.innerHTML = `<header class="head"><div><h1>Environment profiles</h1><p>A profile combines device, network, CPU and browser behaviour. Profiles live in the local config file.</p></div>
     <div class="row"><button class="btn" data-act="import-profiles">Import JSON</button><button class="btn" data-act="export-profiles">Export JSON</button><input id="impFile" type="file" accept=".json,application/json" hidden></div></header>
     <div class="split" style="--w:300px">
@@ -359,8 +359,14 @@ function pageProfiles() {
       <section class="col" style="flex:1 1 320px"><h3 class="muted">Effective settings</h3><pre class="code" id="preview">Select a profile.</pre>
         <p class="muted small">Timezone, color scheme and reduced motion are applied through Chrome launch settings. Everything else is passed to Lighthouse.</p></section>
     </div>`;
-  if (S.editing) {
-    $('#editor').innerHTML = `${editorHtml(S.editing)}<div class="row"><button class="btn primary" data-act="save-profile">Save profile</button><button class="btn" data-act="dup-profile">Duplicate</button><button class="btn danger" data-act="del-profile">Delete</button></div>`;
+  if (S.editing?.native) {
+    $('#editor').innerHTML = `<h2>${esc(S.editing.name)}</h2>
+      <div class="notice"><span>Built in and read-only. It measures this machine as it is: its real CPU speed, its real network connection and the browser's own user agent, with no emulation or throttling. Results reflect this hardware, so compare them only against baselines recorded on the same machine.</span></div>
+      <div class="row">${S.config.defaultProfileId === S.editing.id ? '<span class="pill t-Ideal">Default profile</span>' : '<button class="btn" data-act="make-default">Make default</button>'}</div>`;
+    schedulePreview();
+  } else if (S.editing) {
+    const isDefault = S.editingOrig && S.editingOrig === S.config.defaultProfileId;
+    $('#editor').innerHTML = `${editorHtml(S.editing)}<div class="row"><button class="btn primary" data-act="save-profile">Save profile</button><button class="btn" data-act="dup-profile">Duplicate</button>${S.editingOrig && !isDefault ? '<button class="btn" data-act="make-default">Make default</button>' : ''}<button class="btn danger" data-act="del-profile">Delete</button></div>`;
     schedulePreview();
   }
   const imp = $('#impFile');
@@ -517,6 +523,11 @@ main.addEventListener('click', async (e) => {
     S.editingOrig = null; S.editing = copy; pageProfiles();
   }
   else if (act === 'save-profile') saveProfile();
+  else if (act === 'make-default') {
+    const cfg = structuredClone(S.config);
+    cfg.defaultProfileId = S.editingOrig;
+    try { await saveConfig(cfg); toast('Default profile updated'); pageProfiles(); } catch (err) { toast(err.message, true); }
+  }
   else if (act === 'del-profile') {
     if (!S.editingOrig) { S.editing = null; return pageProfiles(); }
     if (S.config.profiles.length < 2) return toast('Keep at least one profile.', true);
@@ -590,7 +601,7 @@ async function boot() {
   }
   S.config = S.state.config;
   S.selected = new Set([...S.selected].filter((id) => S.config.profiles.some((p) => p.id === id)));
-  if (!S.selected.size) S.selected = new Set(S.config.profiles.slice(0, 2).map((p) => p.id));
+  if (!S.selected.size) S.selected = new Set([S.config.defaultProfileId]);
   S.opts = { ...S.config.defaults, ...S.opts, categories: S.opts.categories?.length ? S.opts.categories : S.config.defaults.categories };
   $('#navFoot').textContent = `${S.state.platform} · ${S.state.outputDir}`;
   if (S.state.running) { S.progress = { status: 'running', id: S.state.running.id, total: 0, done: 0, phase: '', log: [] }; connectEvents(); }

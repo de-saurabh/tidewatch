@@ -55,7 +55,7 @@ try {
       signal: ac.signal,
       rawOptions: {
         urls: values.url,
-        profileIds: values.profile ?? [config.profiles[0].id],
+        profileIds: values.profile ?? [config.defaultProfileId],
         runs: values.runs,
         cooldownSec: values.cooldown,
         categories: values.categories?.split(','),

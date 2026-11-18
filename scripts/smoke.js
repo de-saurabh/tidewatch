@@ -45,9 +45,11 @@ try {
   // Self-comparison through the baseline path.
   const second = await runBatch({
     config,
-    rawOptions: { urls: [url], profileIds: ['desktop-cable'], runs: 1, cooldownSec: 0, baselineCsv: await fs.readFile(path.join(dir, 'results.csv'), 'utf8') },
+    rawOptions: { urls: [url], profileIds: ['desktop-cable', 'this-machine'], runs: 1, cooldownSec: 0, baselineCsv: await fs.readFile(path.join(dir, 'results.csv'), 'utf8') },
   });
   assert.ok(second.batch.comparison.rows.length > 0, 'comparison produced no rows');
+  assert.ok(second.batch.runs.every((r) => r.ok), 'native or desktop run failed');
+  assert.ok(second.batch.comparison.currentOnly.some((x) => x.profileId === 'this-machine'), 'native profile missing from results');
 
   console.log(`smoke ok: ${batch.runs.map((r) => r.metrics.perf_score).join(', ')} · conditions ${batch.overall} · ${os.platform()}`);
 } finally {

@@ -7,8 +7,7 @@ export const CONFIG_PATH = process.env.LT_CONFIG
   ? path.resolve(process.env.LT_CONFIG)
   : path.join(ROOT, 'lighthouse-tester.config.json');
 
-const mobile = {
-  formFactor: 'mobile',
+const base = {
   userAgent: null,
   throttlingMethod: 'simulate',
   locale: 'en-US',
@@ -20,8 +19,46 @@ const mobile = {
   extraHeaders: {},
 };
 
+const profile = (id, name, formFactor, screen, [rttMs, downloadKbps, uploadKbps], cpuSlowdownMultiplier) => ({
+  ...base,
+  id,
+  name,
+  formFactor,
+  screen,
+  throttling: { rttMs, downloadKbps, uploadKbps, cpuSlowdownMultiplier },
+});
+
+export const NATIVE_PROFILE_ID = 'this-machine';
+
+/**
+ * Uses the machine exactly as it is: its real CPU, its real network, a desktop viewport.
+ * Built in and read-only: it is always present and is never customised.
+ */
+export const NATIVE_PROFILE = {
+  ...base,
+  id: NATIVE_PROFILE_ID,
+  name: 'This machine · no emulation or throttling',
+  native: true,
+  formFactor: 'desktop',
+  throttlingMethod: 'provided',
+  locale: 'en-US',
+  screen: null,
+  throttling: null,
+};
+
+// Ordered fastest to slowest. Network values follow Lighthouse's own presets where one exists.
+const BUILT_IN_PROFILES = [
+  profile('desktop-fiber', 'Desktop · Fiber · 1× CPU', 'desktop', { width: 1350, height: 940, deviceScaleFactor: 1 }, [10, 100000, 50000], 1),
+  profile('desktop-cable', 'Desktop · Cable · 1× CPU', 'desktop', { width: 1350, height: 940, deviceScaleFactor: 1 }, [40, 10240, 10240], 1),
+  profile('tablet-fast-4g', 'Tablet · Fast 4G · 2× CPU', 'mobile', { width: 768, height: 1024, deviceScaleFactor: 2 }, [70, 9000, 1500], 2),
+  profile('phone-high-end-fast-4g', 'High-end phone · Fast 4G · 2× CPU', 'mobile', { width: 412, height: 915, deviceScaleFactor: 2.625 }, [70, 9000, 1500], 2),
+  profile('moto-g-slow-4g', 'Mid-range phone (Moto G Power) · Slow 4G · 4× CPU', 'mobile', { width: 412, height: 823, deviceScaleFactor: 1.75 }, [150, 1638.4, 675], 4),
+  profile('slow-3g-stress', 'Low-end phone · Slow 3G · 6× CPU', 'mobile', { width: 412, height: 823, deviceScaleFactor: 1.75 }, [400, 400, 400], 6),
+];
+
 export const DEFAULT_CONFIG = {
   outputDir: 'output',
+  defaultProfileId: NATIVE_PROFILE_ID,
   defaults: { runs: 5, cooldownSec: 10, cache: 'cold', warmup: false, categories: ['performance'] },
   probes: {
     // Host for latency/jitter probes. null = use the first target URL's host.
@@ -42,45 +79,15 @@ export const DEFAULT_CONFIG = {
     wifiSignalDbm: { warn: -70, poor: -80 },
   },
   regression: { scorePoints: 5, lcpPct: 10, tbtPct: 15, clsAbs: 0.02, fcpPct: 10, siPct: 10 },
-  profiles: [
-    {
-      ...mobile,
-      id: 'moto-g-slow-4g',
-      name: 'Moto G Power · Slow 4G · 4× CPU',
-      screen: { width: 412, height: 823, deviceScaleFactor: 1.75 },
-      throttling: { rttMs: 150, downloadKbps: 1638.4, uploadKbps: 675, cpuSlowdownMultiplier: 4 },
-    },
-    {
-      ...mobile,
-      id: 'desktop-cable',
-      name: 'Desktop · Cable · 1× CPU',
-      formFactor: 'desktop',
-      screen: { width: 1350, height: 940, deviceScaleFactor: 1 },
-      throttling: { rttMs: 40, downloadKbps: 10240, uploadKbps: 10240, cpuSlowdownMultiplier: 1 },
-    },
-    {
-      ...mobile,
-      id: 'tablet-fast-4g',
-      name: 'Tablet · Fast 4G · 2× CPU',
-      screen: { width: 768, height: 1024, deviceScaleFactor: 2 },
-      throttling: { rttMs: 70, downloadKbps: 9000, uploadKbps: 1500, cpuSlowdownMultiplier: 2 },
-    },
-    {
-      ...mobile,
-      id: 'slow-3g-stress',
-      name: 'Slow 3G stress test · 6× CPU',
-      screen: { width: 412, height: 823, deviceScaleFactor: 1.75 },
-      throttling: { rttMs: 400, downloadKbps: 400, uploadKbps: 400, cpuSlowdownMultiplier: 6 },
-    },
-  ],
+  profiles: [NATIVE_PROFILE, ...BUILT_IN_PROFILES],
 };
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
-function merge(base, over) {
-  if (!isObj(base) || !isObj(over)) return over === undefined ? base : over;
-  const out = { ...base };
-  for (const [k, v] of Object.entries(over)) out[k] = k in base && isObj(base[k]) ? merge(base[k], v) : v;
+function merge(baseObj, over) {
+  if (!isObj(baseObj) || !isObj(over)) return over === undefined ? baseObj : over;
+  const out = { ...baseObj };
+  for (const [k, v] of Object.entries(over)) out[k] = k in baseObj && isObj(baseObj[k]) ? merge(baseObj[k], v) : v;
   return out;
 }
 
@@ -93,6 +100,7 @@ export function validateProfile(p) {
   if (!isObj(p)) throw new Error('Profile must be an object');
   if (!ID_RE.test(p.id ?? '')) throw new Error(`Profile id "${p.id}" must be lowercase letters, digits, "-" or "_"`);
   if (typeof p.name !== 'string' || !p.name.trim()) throw new Error(`Profile ${p.id}: name is required`);
+  if (p.native) return; // nothing to customise
   if (!['mobile', 'desktop'].includes(p.formFactor)) throw new Error(`Profile ${p.id}: formFactor must be mobile or desktop`);
   if (!['simulate', 'devtools', 'provided'].includes(p.throttlingMethod)) throw new Error(`Profile ${p.id}: invalid throttlingMethod`);
   num(p.screen?.width, `Profile ${p.id}: width`, 200, 8000);
@@ -108,6 +116,14 @@ export function validateProfile(p) {
   if (p.timezone != null && !/^[A-Za-z0-9_+\-/]+$/.test(p.timezone)) throw new Error(`Profile ${p.id}: invalid timezone`);
 }
 
+/** The native profile is always first, always canonical, and the default falls back to it. */
+export function normalizeConfig(cfg) {
+  const out = { ...cfg };
+  out.profiles = [NATIVE_PROFILE, ...(cfg.profiles ?? []).filter((p) => p.id !== NATIVE_PROFILE_ID && !p.native)];
+  if (!out.profiles.some((p) => p.id === out.defaultProfileId)) out.defaultProfileId = NATIVE_PROFILE_ID;
+  return out;
+}
+
 export function validateConfig(cfg) {
   if (!isObj(cfg)) throw new Error('Config must be an object');
   if (typeof cfg.outputDir !== 'string' || !cfg.outputDir.trim()) throw new Error('outputDir is required');
@@ -118,6 +134,7 @@ export function validateConfig(cfg) {
     if (ids.has(p.id)) throw new Error(`Duplicate profile id "${p.id}"`);
     ids.add(p.id);
   }
+  if (!ids.has(cfg.defaultProfileId)) throw new Error(`defaultProfileId "${cfg.defaultProfileId}" is not a known profile`);
   for (const [k, group] of Object.entries(cfg.thresholds ?? {})) {
     for (const [f, v] of Object.entries(group)) {
       if (typeof v !== 'boolean' && !(typeof v === 'number' && Number.isFinite(v))) throw new Error(`thresholds.${k}.${f} must be a number`);
@@ -139,15 +156,17 @@ export async function loadConfig() {
   }
   // Profiles are replaced wholesale (never merged with the defaults) so deleting one sticks.
   const cfg = merge({ ...DEFAULT_CONFIG, profiles: undefined }, raw);
-  cfg.profiles = (raw.profiles ?? DEFAULT_CONFIG.profiles).map((p) => ({ ...mobile, ...p }));
-  validateConfig(cfg);
-  return cfg;
+  cfg.profiles = (raw.profiles ?? DEFAULT_CONFIG.profiles).map((p) => (p.native ? p : { ...base, ...p }));
+  const normalized = normalizeConfig(cfg);
+  validateConfig(normalized);
+  return normalized;
 }
 
 export async function saveConfig(cfg) {
-  validateConfig(cfg);
+  const normalized = normalizeConfig(cfg);
+  validateConfig(normalized);
   const tmp = `${CONFIG_PATH}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(cfg, null, 2) + '\n');
+  await fs.writeFile(tmp, JSON.stringify(normalized, null, 2) + '\n');
   await fs.rename(tmp, CONFIG_PATH);
 }
 

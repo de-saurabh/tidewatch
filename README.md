@@ -42,6 +42,24 @@ Each batch is a folder under `output/` (configurable):
 `lighthouse-tester.config.json` (created on first start) holds profiles, environment thresholds,
 regression thresholds, run defaults and probe settings. Edit it by hand or in the UI.
 
+## Profiles
+
+Built in, ordered fastest to slowest. The first is the default.
+
+| Profile | Emulation |
+|---|---|
+| **This machine** (default) | None. Real CPU, real network, browser's own user agent. Read-only |
+| Desktop · Fiber | 100 Mbps, 10 ms RTT, 1× CPU |
+| Desktop · Cable | Lighthouse's desktop preset: 10 Mbps, 40 ms, 1× |
+| Tablet · Fast 4G | 9 Mbps, 70 ms, 2× CPU |
+| High-end phone · Fast 4G | 9 Mbps, 70 ms, 2× CPU |
+| Mid-range phone (Moto G Power) · Slow 4G | Lighthouse's mobile default: 1.6 Mbps, 150 ms, 4× CPU |
+| Low-end phone · Slow 3G | 400 Kbps, 400 ms, 6× CPU |
+
+Add, edit or delete any profile except "This machine"; set a different default in the Profiles page
+(`defaultProfileId` in the config). Results from "This machine" reflect that hardware, so only compare
+them with baselines recorded on the same machine.
+
 ## How conditions are judged
 
 Checks: power source, power saver, CPU load, free memory, thermal state, latency, jitter, connection

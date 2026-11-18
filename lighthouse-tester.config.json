@@ -1,5 +1,6 @@
 {
   "outputDir": "output",
+  "defaultProfileId": "this-machine",
   "defaults": {
     "runs": 5,
     "cooldownSec": 10,
@@ -66,7 +67,23 @@
   },
   "profiles": [
     {
-      "formFactor": "mobile",
+      "userAgent": null,
+      "throttlingMethod": "provided",
+      "locale": "en-US",
+      "timezone": null,
+      "colorScheme": "light",
+      "reducedMotion": false,
+      "saveData": false,
+      "blockedUrlPatterns": [],
+      "extraHeaders": {},
+      "id": "this-machine",
+      "name": "This machine · no emulation or throttling",
+      "native": true,
+      "formFactor": "desktop",
+      "screen": null,
+      "throttling": null
+    },
+    {
       "userAgent": null,
       "throttlingMethod": "simulate",
       "locale": "en-US",
@@ -76,22 +93,22 @@
       "saveData": false,
       "blockedUrlPatterns": [],
       "extraHeaders": {},
-      "id": "moto-g-slow-4g",
-      "name": "Moto G Power · Slow 4G · 4× CPU",
+      "id": "desktop-fiber",
+      "name": "Desktop · Fiber · 1× CPU",
+      "formFactor": "desktop",
       "screen": {
-        "width": 412,
-        "height": 823,
-        "deviceScaleFactor": 1.75
+        "width": 1350,
+        "height": 940,
+        "deviceScaleFactor": 1
       },
       "throttling": {
-        "rttMs": 150,
-        "downloadKbps": 1638.4,
-        "uploadKbps": 675,
-        "cpuSlowdownMultiplier": 4
+        "rttMs": 10,
+        "downloadKbps": 100000,
+        "uploadKbps": 50000,
+        "cpuSlowdownMultiplier": 1
       }
     },
     {
-      "formFactor": "desktop",
       "userAgent": null,
       "throttlingMethod": "simulate",
       "locale": "en-US",
@@ -103,6 +120,7 @@
       "extraHeaders": {},
       "id": "desktop-cable",
       "name": "Desktop · Cable · 1× CPU",
+      "formFactor": "desktop",
       "screen": {
         "width": 1350,
         "height": 940,
@@ -116,7 +134,6 @@
       }
     },
     {
-      "formFactor": "mobile",
       "userAgent": null,
       "throttlingMethod": "simulate",
       "locale": "en-US",
@@ -128,6 +145,7 @@
       "extraHeaders": {},
       "id": "tablet-fast-4g",
       "name": "Tablet · Fast 4G · 2× CPU",
+      "formFactor": "mobile",
       "screen": {
         "width": 768,
         "height": 1024,
@@ -141,7 +159,56 @@
       }
     },
     {
+      "userAgent": null,
+      "throttlingMethod": "simulate",
+      "locale": "en-US",
+      "timezone": null,
+      "colorScheme": "light",
+      "reducedMotion": false,
+      "saveData": false,
+      "blockedUrlPatterns": [],
+      "extraHeaders": {},
+      "id": "phone-high-end-fast-4g",
+      "name": "High-end phone · Fast 4G · 2× CPU",
       "formFactor": "mobile",
+      "screen": {
+        "width": 412,
+        "height": 915,
+        "deviceScaleFactor": 2.625
+      },
+      "throttling": {
+        "rttMs": 70,
+        "downloadKbps": 9000,
+        "uploadKbps": 1500,
+        "cpuSlowdownMultiplier": 2
+      }
+    },
+    {
+      "userAgent": null,
+      "throttlingMethod": "simulate",
+      "locale": "en-US",
+      "timezone": null,
+      "colorScheme": "light",
+      "reducedMotion": false,
+      "saveData": false,
+      "blockedUrlPatterns": [],
+      "extraHeaders": {},
+      "id": "moto-g-slow-4g",
+      "name": "Mid-range phone (Moto G Power) · Slow 4G · 4× CPU",
+      "formFactor": "mobile",
+      "screen": {
+        "width": 412,
+        "height": 823,
+        "deviceScaleFactor": 1.75
+      },
+      "throttling": {
+        "rttMs": 150,
+        "downloadKbps": 1638.4,
+        "uploadKbps": 675,
+        "cpuSlowdownMultiplier": 4
+      }
+    },
+    {
       "userAgent": null,
       "throttlingMethod": "simulate",
       "locale": "en-US",
@@ -152,7 +219,8 @@
       "blockedUrlPatterns": [],
       "extraHeaders": {},
       "id": "slow-3g-stress",
-      "name": "Slow 3G stress test · 6× CPU",
+      "name": "Low-end phone · Slow 3G · 6× CPU",
+      "formFactor": "mobile",
       "screen": {
         "width": 412,
         "height": 823,

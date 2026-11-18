@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { COLUMNS, parseCsv, readResultsCsv, toCsv } from '../src/report/csv.js';
 import { evaluate, worstVerdict } from '../src/env/verdict.js';
 import { compareRuns } from '../src/report/compare.js';
-import { DEFAULT_CONFIG, validateConfig } from '../src/config.js';
+import { DEFAULT_CONFIG, NATIVE_PROFILE_ID, normalizeConfig, validateConfig } from '../src/config.js';
+import { profileToFlags } from '../src/runner/lighthouse.js';
 import { median } from '../src/util.js';
 
 const T = DEFAULT_CONFIG.thresholds;
@@ -62,7 +63,7 @@ test('readResultsCsv rejects foreign files and wrong schema versions', () => {
 test('default config validates; bad profile is rejected', () => {
   validateConfig(structuredClone(DEFAULT_CONFIG));
   const bad = structuredClone(DEFAULT_CONFIG);
-  bad.profiles[0].throttling.cpuSlowdownMultiplier = 0;
+  bad.profiles[1].throttling.cpuSlowdownMultiplier = 0;
   assert.throws(() => validateConfig(bad));
 });
 
@@ -70,4 +71,26 @@ test('median handles odd, even and empty input', () => {
   assert.equal(median([3, 1, 2]), 2);
   assert.equal(median([4, 1, 2, 3]), 2.5);
   assert.equal(median([]), null);
+});
+
+test('native profile is always first, canonical and the fallback default', () => {
+  const messy = structuredClone(DEFAULT_CONFIG);
+  messy.profiles = messy.profiles.filter((p) => !p.native); // user removed it
+  messy.profiles.push({ ...DEFAULT_CONFIG.profiles[0], id: 'sneaky', native: true }); // forged copy
+  messy.defaultProfileId = 'deleted-profile';
+  const n = normalizeConfig(messy);
+  assert.equal(n.profiles[0].id, NATIVE_PROFILE_ID);
+  assert.ok(!n.profiles.some((p) => p.id === 'sneaky'));
+  assert.equal(n.defaultProfileId, NATIVE_PROFILE_ID);
+  validateConfig(n);
+});
+
+test('native profile applies no emulation or throttling; others are ordered fast to slow', () => {
+  const f = profileToFlags(DEFAULT_CONFIG.profiles[0]);
+  assert.equal(f.throttlingMethod, 'provided');
+  assert.equal(f.screenEmulation.disabled, true);
+  assert.equal(f.throttling.cpuSlowdownMultiplier, 1);
+  const rest = DEFAULT_CONFIG.profiles.slice(1);
+  const speed = (p) => p.throttling.cpuSlowdownMultiplier * 1e6 + p.throttling.rttMs;
+  assert.deepEqual(rest.map(speed), [...rest.map(speed)].sort((a, b) => a - b));
 });
