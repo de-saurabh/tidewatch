@@ -1,5 +1,8 @@
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
 import lighthouse from 'lighthouse';
+import path from 'node:path';
 import * as chromeLauncher from 'chrome-launcher';
 import { round } from '../util.js';
 
@@ -50,8 +53,9 @@ export function profileToFlags(profile) {
 }
 
 /** Chrome launch options for the parts of a profile that Lighthouse has no setting for. */
-export function profileToChrome(profile) {
-  const flags = ['--headless=new', '--disable-extensions', '--no-first-run'];
+export function profileToChrome(profile, { headless = true } = {}) {
+  // Explicitly off even though Chrome's launcher defaults already disable extensions: a clean slate must not depend on defaults.
+  const flags = [...(headless ? ['--headless=new'] : []), '--disable-extensions', '--no-first-run'];
   // Headless Chrome defaults to an 800×600 window, which renders a cramped desktop layout.
   if (profile.native) flags.push('--window-size=1350,940');
   // Containers and CI runners (often root, no user namespaces) cannot start Chrome's sandbox.
@@ -65,9 +69,32 @@ export function profileToChrome(profile) {
   return { chromeFlags: flags, envVars };
 }
 
-export async function launchChrome(profile) {
-  const { chromeFlags, envVars } = profileToChrome(profile);
+export async function launchChrome(profile, options) {
+  const { chromeFlags, envVars } = profileToChrome(profile, options);
   return chromeLauncher.launch({ chromeFlags, envVars, logLevel: 'silent' });
+}
+
+const sameDir = async (a, b) => {
+  const real = (p) => fsp.realpath(p).catch(() => path.resolve(p));
+  const [ra, rb] = await Promise.all([real(a), real(b)]);
+  return ra === rb || ra.startsWith(rb + path.sep);
+};
+
+/**
+ * Ask the running browser what it actually is, over the DevTools HTTP endpoint (no WebSocket needed).
+ * Verifies the clean slate instead of assuming it: headless or headed, extension targets, profile location.
+ */
+export async function inspectBrowser(chrome) {
+  const base = `http://127.0.0.1:${chrome.port}`;
+  const get = (p) => fetch(base + p, { signal: AbortSignal.timeout(3000) }).then((r) => r.json()).catch(() => null);
+  const [version, targets] = await Promise.all([get('/json/version'), get('/json/list')]);
+  const dirArg = (chrome.process?.spawnargs ?? []).find((a) => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length);
+  return {
+    userAgent: version?.['User-Agent'] ?? null,
+    headless: version ? /Headless/i.test(`${version['User-Agent'] ?? ''} ${version.Browser ?? ''}`) : null,
+    extensionTargets: Array.isArray(targets) ? targets.filter((t) => /^chrome-extension:\/\//.test(t.url ?? '')).length : null,
+    freshProfile: dirArg ? await sameDir(dirArg, os.tmpdir()) : null,
+  };
 }
 
 /** Run Lighthouse once against an already-running Chrome. Returns { lhr, html }. */

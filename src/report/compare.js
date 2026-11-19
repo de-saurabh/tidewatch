@@ -9,13 +9,14 @@ export function recordedVerdict(rows) {
 }
 
 function metricDefs(r) {
+  const floor = r.minChangeMs ?? 50;
   return [
     { key: 'perf_score', label: 'Performance score', kind: 'points', higherBetter: true, threshold: r.scorePoints },
-    { key: 'lcp_ms', label: 'LCP', kind: 'pct', threshold: r.lcpPct },
-    { key: 'tbt_ms', label: 'TBT', kind: 'pct', threshold: r.tbtPct },
+    { key: 'lcp_ms', label: 'LCP', kind: 'pct', threshold: r.lcpPct, floor },
+    { key: 'tbt_ms', label: 'TBT', kind: 'pct', threshold: r.tbtPct, floor },
     { key: 'cls', label: 'CLS', kind: 'abs', threshold: r.clsAbs },
-    { key: 'fcp_ms', label: 'FCP', kind: 'pct', threshold: r.fcpPct },
-    { key: 'speed_index_ms', label: 'Speed Index', kind: 'pct', threshold: r.siPct },
+    { key: 'fcp_ms', label: 'FCP', kind: 'pct', threshold: r.fcpPct, floor },
+    { key: 'speed_index_ms', label: 'Speed Index', kind: 'pct', threshold: r.siPct, floor },
   ];
 }
 
@@ -28,7 +29,10 @@ function judge(def, base, cur) {
   else if (def.kind === 'abs') { worse = delta >= def.threshold; better = delta <= -def.threshold; }
   else if (pct === null) { worse = false; better = false; }
   else { worse = pct >= def.threshold; better = pct <= -def.threshold; }
-  return { delta, pct, status: worse ? 'Regressed' : better ? 'Improved' : 'Within threshold' };
+  // Noise floor: a big percentage on a tiny number (1 ms to 0 ms) is measurement noise, not a change.
+  const belowFloor = (worse || better) && def.floor != null && Math.abs(delta) < def.floor;
+  if (belowFloor) { worse = false; better = false; }
+  return { delta, pct, belowFloor, status: worse ? 'Regressed' : better ? 'Improved' : 'Within threshold' };
 }
 
 function sameOrDiffers(ok, same, differs) {
@@ -67,6 +71,8 @@ export function compareRuns(baselineRows, currentRows, regression) {
         delta: round(j.delta, def.key === 'cls' ? 3 : 1),
         pct: j.pct == null ? null : round(j.pct, 1),
         status: j.status,
+        belowFloor: j.belowFloor,
+        floorMs: def.floor ?? null,
         unreliable: cur.env_verdict_start === 'Poor' || degraded > 0,
         note: degraded > 0 ? `${degraded} of ${total} runs not ideal` : 'Conditions ideal',
       });
@@ -92,6 +98,19 @@ export function compareRuns(baselineRows, currentRows, regression) {
       `Chrome ${chromeMajor(c0.chrome_version)} and Lighthouse ${c0.lighthouse_version}`,
       `Versions differ: Chrome ${chromeMajor(b0.chrome_version)} / Lighthouse ${b0.lighthouse_version} vs Chrome ${chromeMajor(c0.chrome_version)} / Lighthouse ${c0.lighthouse_version}`,
     ),
+    sameOrDiffers(
+      (b0.browser_mode || 'headless') === (c0.browser_mode || 'headless'),
+      `Browser mode: ${c0.browser_mode || 'headless'}`,
+      `Browser mode differs: ${b0.browser_mode || 'headless'} vs ${c0.browser_mode || 'headless'}`,
+    ),
+    // CSVs written before browser details were recorded have no channel or architecture to compare.
+    ...(b0.browser_channel
+      ? [sameOrDiffers(
+        b0.browser_channel === c0.browser_channel && (b0.browser_arch || '') === (c0.browser_arch || ''),
+        `Browser build: ${c0.browser_channel} ${c0.browser_arch || ''}`.trim(),
+        `Browser build differs: ${b0.browser_channel} ${b0.browser_arch || ''} vs ${c0.browser_channel || 'unknown'} ${c0.browser_arch || ''}`.replace(/\s+/g, ' '),
+      )]
+      : []),
     sameOrDiffers(
       !shapeDiffers.length,
       'Profile throttling settings match',

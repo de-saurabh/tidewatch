@@ -6,6 +6,7 @@
     "cooldownSec": 10,
     "cache": "cold",
     "warmup": false,
+    "headless": true,
     "categories": [
       "performance"
     ]
@@ -55,6 +56,10 @@
     "wifiSignalDbm": {
       "warn": -70,
       "poor": -80
+    },
+    "otherBrowserCpuPct": {
+      "warn": 10,
+      "poor": 40
     }
   },
   "regression": {
@@ -63,7 +68,8 @@
     "tbtPct": 15,
     "clsAbs": 0.02,
     "fcpPct": 10,
-    "siPct": 10
+    "siPct": 10,
+    "minChangeMs": 50
   },
   "profiles": [
     {

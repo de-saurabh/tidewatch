@@ -39,7 +39,18 @@ try {
   assert.equal(rows.filter((r) => r.row_type === 'median').length, 1);
   assert.equal(csv.rows.filter((r) => r.row_type === 'run').length, 2);
 
+  // Clean slate is verified on every run, not assumed.
+  for (const r of batch.runs) {
+    assert.equal(r.browser.headless, true, 'expected a headless browser');
+    assert.equal(r.browser.extensionTargets, 0, 'extension targets were loaded');
+    assert.equal(r.browser.freshProfile, true, 'profile is not a fresh temp folder');
+    assert.deepEqual(r.cleanIssues, []);
+  }
+  assert.ok(rows.every((r) => r.browser_mode === 'headless'));
+  assert.ok(rows.filter((r) => r.row_type === 'median').every((r) => r.clean_profile === true && r.extensions_loaded === 0));
+
   const report = await fs.readFile(path.join(dir, 'report.html'), 'utf8');
+  assert.match(report, /<h2>Browser<\/h2>/);
   assert.match(report, /Ran under (non-)?ideal conditions/);
 
   // Self-comparison through the baseline path.

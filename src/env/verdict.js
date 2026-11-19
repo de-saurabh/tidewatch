@@ -1,6 +1,8 @@
 // Turns a raw snapshot into graded checks plus an overall verdict.
 // Statuses: Ideal | Warning | Poor | Not assessed. Overall: Ideal | Acceptable | Poor.
 
+import { judgeArch } from './browser.js';
+
 const RANK = { Ideal: 0, 'Not assessed': 0, Warning: 1, Poor: 2 };
 
 function grade(value, { warn, poor }, higherIsBetter = false) {
@@ -131,12 +133,86 @@ const CHECKS = [
       return { status: grade(w.signalDbm, t.wifiSignalDbm, true), display: `${w.signalDbm} dBm`, rule: `Ideal above ${t.wifiSignalDbm.warn} dBm` };
     },
   },
+  {
+    id: 'browser',
+    group: 'browser',
+    label: 'Browser',
+    fullOnly: true,
+    run: (s) => {
+      const b = s.raw.browser;
+      if (!b) return na('Could not inspect the browser');
+      if (!b.found) return { status: 'Poor', display: 'Chrome not found', rule: 'Install Chrome, or set CHROME_PATH' };
+      if (!b.version) return { status: 'Not assessed', display: 'Version unknown', rule: 'A stable Chrome build gives comparable baselines' };
+      const label = { stable: 'Chrome', chromium: 'Chromium', 'chrome-for-testing': 'Chrome for Testing', beta: 'Chrome Beta', dev: 'Chrome Dev', canary: 'Chrome Canary', unknown: 'Chrome' }[b.channel];
+      const pre = ['beta', 'dev', 'canary'].includes(b.channel);
+      const pkg = b.packaging ? ` · ${b.packaging} package` : '';
+      return {
+        status: pre || b.packaging ? 'Warning' : 'Ideal',
+        display: `${label} ${b.version}${pkg}`,
+        rule: pre ? 'Pre-release builds change often; use a stable build for baselines' : b.packaging ? 'Snap and Flatpak builds restrict the sandbox and temp folders' : 'A stable build gives comparable baselines',
+      };
+    },
+  },
+  {
+    id: 'browserArch',
+    group: 'browser',
+    label: 'Browser architecture',
+    fullOnly: true,
+    run: (s) => {
+      const b = s.raw.browser;
+      if (!b?.found) return na('Needs a browser');
+      return { ...judgeArch({ hardware: b.hardwareArch, binArchs: b.binArchs, nodeTranslated: b.nodeTranslated }), rule: 'Must match the hardware, or Chrome runs under translation' };
+    },
+  },
+  {
+    id: 'browserPolicies',
+    group: 'browser',
+    label: 'Managed policies',
+    fullOnly: true,
+    run: (s) => {
+      const b = s.raw.browser;
+      if (!b?.found) return na('Needs a browser');
+      const n = b.policies.length;
+      return {
+        status: n ? 'Warning' : 'Ideal',
+        display: n ? `${n} polic${n === 1 ? 'y' : 'ies'}: ${b.policies.slice(0, 3).join(', ')}${n > 3 ? '…' : ''}` : 'None',
+        rule: 'Enterprise policies apply even to a fresh profile and can change browser behaviour',
+      };
+    },
+  },
+  {
+    id: 'otherBrowsers',
+    group: 'browser',
+    label: 'Other Chrome processes',
+    fullOnly: true,
+    run: (s, t) => {
+      const o = s.raw.otherBrowsers;
+      if (!o) return na('Process list unavailable');
+      return {
+        status: grade(o.cpuPct, t.otherBrowserCpuPct),
+        display: o.count ? `${o.count} running · ${o.cpuPct}% CPU · ${o.memMb} MB` : 'None running',
+        rule: `Ideal up to ${t.otherBrowserCpuPct.warn}% CPU, poor above ${t.otherBrowserCpuPct.poor}%`,
+      };
+    },
+  },
+  {
+    id: 'proxyVpn',
+    group: 'browser',
+    label: 'Proxy and VPN',
+    fullOnly: true,
+    run: (s) => {
+      const p = s.raw.proxyVpn;
+      if (!p) return na('Not provided on this OS');
+      const found = [p.proxies.length ? `proxy via ${p.proxies.join(' and ')}` : null, p.vpn ? 'VPN connected' : null].filter(Boolean);
+      return { status: found.length ? 'Warning' : 'Ideal', display: found.length ? found.join(', ') : 'None detected', rule: 'Proxies and VPNs add latency and variance' };
+    },
+  },
 ];
 
 export function evaluate(snapshot, thresholds) {
   const checks = CHECKS.filter((c) => !(snapshot.light && c.fullOnly)).map((c) => {
     const r = c.run(snapshot, thresholds);
-    return { id: c.id, label: c.label, ...r };
+    return { id: c.id, group: c.group ?? 'machine', label: c.label, ...r };
   });
   const counts = { Ideal: 0, Warning: 0, Poor: 0, 'Not assessed': 0 };
   for (const c of checks) counts[c.status]++;

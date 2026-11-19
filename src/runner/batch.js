@@ -6,7 +6,7 @@ import { resolveOutputDir } from '../config.js';
 import { compareRuns } from '../report/compare.js';
 import { SCHEMA_VERSION, readResultsCsv, toCsv } from '../report/csv.js';
 import { renderReportHtml } from '../report/html.js';
-import { CATEGORY_IDS, extractMetrics, launchChrome, runLighthouse } from './lighthouse.js';
+import { CATEGORY_IDS, extractMetrics, inspectBrowser, launchChrome, runLighthouse } from './lighthouse.js';
 import { BATCH_ID_RE, batchIdNow, median, round, sleep, slug, stddev } from '../util.js';
 
 const MAX_URLS = 200;
@@ -43,6 +43,7 @@ export function normalizeOptions(raw, config) {
     cooldownSec: int(raw.cooldownSec, d.cooldownSec, 0, 300, 'Cooldown'),
     cache,
     warmup: Boolean(raw.warmup ?? d.warmup),
+    headless: Boolean(raw.headless ?? d.headless ?? true),
     baselineCsv: typeof raw.baselineCsv === 'string' && raw.baselineCsv.trim() ? raw.baselineCsv : null,
     baselineName: typeof raw.baselineName === 'string' ? raw.baselineName.slice(0, 200) : null,
   };
@@ -73,6 +74,16 @@ function envColumns(rec) {
   };
 }
 
+/** What a run's browser looked like against the clean-slate promise. */
+function cleanSlateIssues(b, wantHeadless) {
+  const issues = [];
+  if (b.extensionTargets === null) issues.push('extensions could not be checked');
+  else if (b.extensionTargets > 0) issues.push(`${b.extensionTargets} extension target${b.extensionTargets === 1 ? '' : 's'} loaded`);
+  if (b.freshProfile === false) issues.push('profile is not a fresh temp folder');
+  if (b.headless !== null && b.headless !== wantHeadless) issues.push(`browser ran ${b.headless ? 'headless' : 'headed'}, expected ${wantHeadless ? 'headless' : 'headed'}`);
+  return issues;
+}
+
 /** Flatten a finished batch into CSV rows: one per run, one median row per URL and profile. */
 export function buildRows(batch) {
   const before = batch.envBefore;
@@ -92,6 +103,10 @@ export function buildRows(batch) {
     cpu_cores: host.cpuCores,
     ram_gb: host.ramGb,
     cache_mode: batch.options.cache,
+    browser_mode: batch.options.headless ? 'headless' : 'headed',
+    browser_channel: batch.browser?.channel ?? '',
+    browser_arch: batch.browser?.binArchs?.join('+') ?? '',
+    browser_policies: batch.browser?.policies?.length ?? '',
   };
   const profiles = new Map(batch.profiles.map((p) => [p.id, p]));
   const shape = (p) => ({
@@ -124,6 +139,8 @@ export function buildRows(batch) {
           run: r.run,
           is_median_run: r === medianRun,
           error: r.error ?? '',
+          extensions_loaded: r.browser?.extensionTargets ?? '',
+          clean_profile: r.browser ? r.cleanIssues.length === 0 : '',
           ...(r.ok ? r.metrics : {}),
           env_verdict_start: r.envStart.overall,
           ...envColumns(r.envStart),
@@ -160,6 +177,8 @@ export function buildRows(batch) {
         lcp_min_ms: lcps.length ? Math.min(...lcps) : null,
         lcp_max_ms: lcps.length ? Math.max(...lcps) : null,
         env_verdict_start: worstVerdict(...runs.map((r) => r.envStart.overall)),
+        extensions_loaded: Math.max(0, ...runs.map((r) => r.browser?.extensionTargets ?? 0)),
+        clean_profile: runs.every((r) => r.browser && r.cleanIssues.length === 0),
       });
     }
   }
@@ -184,6 +203,13 @@ export async function runBatch({ config, rawOptions, onEvent = () => {}, signal 
     if (!baseline.ok) throw new Error(`Baseline CSV rejected: ${baseline.errors.join(' ')}`);
   }
 
+  // Headed Chrome needs a display. Without one, fall back to headless and say so rather than failing every run.
+  let modeNote = null;
+  if (!options.headless && process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    options.headless = true;
+    modeNote = 'Headed mode was requested but no display is available, so the batch ran headless.';
+  }
+
   const total = options.urls.length * profiles.length * options.runs;
   const probeOpts = { latencyHost: config.probes.latencyHost || options.urls[0], throughputUrl: config.probes.throughputUrl };
   const startedAt = new Date();
@@ -194,6 +220,8 @@ export async function runBatch({ config, rawOptions, onEvent = () => {}, signal 
     startedAt: startedAt.toISOString(),
     finishedAt: null,
     options: { ...options, baselineCsv: undefined },
+    modeNote,
+    browser: null,
     profiles,
     thresholds: config.thresholds,
     envBefore: null,
@@ -210,6 +238,8 @@ export async function runBatch({ config, rawOptions, onEvent = () => {}, signal 
   onEvent({ type: 'start', id, total });
   onEvent({ type: 'phase', phase: 'Checking the environment' });
   batch.envBefore = await snap(false);
+  batch.browser = batch.envBefore.snapshot.raw.browser;
+  if (modeNote) onEvent({ type: 'note', message: modeNote });
   onEvent({ type: 'env', which: 'before', verdict: batch.envBefore.verdict.overall });
 
   let done = 0;
@@ -236,11 +266,14 @@ export async function runBatch({ config, rawOptions, onEvent = () => {}, signal 
             startedAt: new Date().toISOString(),
             envStart: { overall: envLight.verdict.overall, raw: envLight.snapshot.raw, checks: envLight.verdict.checks },
             ok: false,
+            cleanIssues: [],
           };
           let chrome = null;
           try {
-            if (warmCache) sharedChrome ??= await launchChrome(profile);
-            chrome = sharedChrome ?? await launchChrome(profile);
+            const launchOpts = { headless: options.headless };
+            if (warmCache) sharedChrome ??= await launchChrome(profile, launchOpts);
+            chrome = sharedChrome ?? await launchChrome(profile, launchOpts);
+            const before = await inspectBrowser(chrome);
             const { lhr, html } = await runLighthouse({
               chrome,
               url,
@@ -248,7 +281,16 @@ export async function runBatch({ config, rawOptions, onEvent = () => {}, signal 
               categories: options.categories,
               disableStorageReset: warmCache && !step.discard,
             });
+            const after = await inspectBrowser(chrome);
             if (!step.discard) {
+              record.browser = {
+                headless: after.headless ?? before.headless,
+                // null means the check itself failed, which is different from "none found".
+                extensionTargets: before.extensionTargets === null && after.extensionTargets === null ? null : Math.max(before.extensionTargets ?? 0, after.extensionTargets ?? 0),
+                freshProfile: before.freshProfile,
+                storageReset: !(warmCache && !step.discard),
+              };
+              record.cleanIssues = cleanSlateIssues(record.browser, options.headless);
               const base = `${slug(url)}__${profile.id}__run${step.run}`;
               await fs.writeFile(path.join(dir, 'runs', `${base}.report.html`), html);
               await fs.writeFile(path.join(dir, 'runs', `${base}.json`), JSON.stringify(lhr));
@@ -276,7 +318,7 @@ export async function runBatch({ config, rawOptions, onEvent = () => {}, signal 
             error: record.error,
             score: record.metrics?.perf_score ?? null,
             envVerdict: record.envStart.overall,
-            nonIdeal: nonIdeal(envLight.verdict).map((c) => `${c.label}: ${c.display}`),
+            nonIdeal: [...nonIdeal(envLight.verdict).map((c) => `${c.label}: ${c.display}`), ...(record.cleanIssues ?? []).map((i) => `Clean slate: ${i}`)],
           });
           if (done < total && options.cooldownSec > 0) await abortableSleep(options.cooldownSec * 1000, signal);
         }
@@ -291,7 +333,13 @@ export async function runBatch({ config, rawOptions, onEvent = () => {}, signal 
   batch.status = cancelled() ? 'cancelled' : 'completed';
   batch.finishedAt = new Date().toISOString();
   batch.durationSec = Math.round((Date.parse(batch.finishedAt) - startedAt.getTime()) / 1000);
-  batch.overall = worstVerdict(batch.envBefore.verdict.overall, batch.envAfter.verdict.overall, ...batch.runs.map((r) => r.envStart.overall));
+  batch.overall = worstVerdict(
+    batch.envBefore.verdict.overall,
+    batch.envAfter.verdict.overall,
+    ...batch.runs.map((r) => r.envStart.overall),
+    // A run that broke the clean-slate promise is at least a warning, whatever the machine looked like.
+    ...(batch.runs.some((r) => r.cleanIssues.length) ? ['Acceptable'] : []),
+  );
 
   const rows = buildRows(batch);
   if (baseline) {

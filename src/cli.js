@@ -12,7 +12,8 @@ const USAGE = `Tidewatch CLI
 
   node src/cli.js env [--host <url>]
   node src/cli.js run --url <url> [--url <url> ...] [--profile <id> ...] [--runs N] [--cooldown S]
-                      [--categories performance,accessibility] [--cache cold|warm] [--warmup] [--baseline results.csv]
+                      [--categories performance,accessibility] [--cache cold|warm] [--warmup] [--headed]
+                      [--baseline results.csv]
   node src/cli.js compare --baseline <csv> --current <csv>
   node src/cli.js profiles
 
@@ -28,6 +29,7 @@ const { positionals, values } = parseArgs({
     categories: { type: 'string' },
     cache: { type: 'string' },
     warmup: { type: 'boolean' },
+    headed: { type: 'boolean' },
     baseline: { type: 'string' },
     current: { type: 'string' },
     host: { type: 'string' },
@@ -43,7 +45,11 @@ try {
     const snap = await collectSnapshot({ latencyHost: values.host ?? config.probes.latencyHost ?? 'https://example.com', throughputUrl: config.probes.throughputUrl });
     const v = evaluate(snap, config.thresholds);
     console.log(`Verdict: ${v.overall} (${v.assessed} of ${v.total} checks assessed)\n`);
-    for (const c of v.checks) console.log(`${ICON[c.status]} ${c.status.padEnd(13)} ${c.label.padEnd(22)} ${c.display}`);
+    let group = null;
+    for (const c of v.checks) {
+      if (c.group !== group) { group = c.group; console.log(`${group === 'browser' ? '\nBrowser and network path' : 'Machine'}`); }
+      console.log(`${ICON[c.status]} ${c.status.padEnd(13)} ${c.label.padEnd(24)} ${c.display}`);
+    }
   } else if (command === 'profiles') {
     for (const p of config.profiles) console.log(`${p.id.padEnd(22)} ${p.name}`);
   } else if (command === 'run') {
@@ -61,11 +67,13 @@ try {
         categories: values.categories?.split(','),
         cache: values.cache,
         warmup: values.warmup,
+        headless: values.headed ? false : undefined,
         baselineCsv,
         baselineName: values.baseline,
       },
       onEvent: (e) => {
         if (e.type === 'phase') console.log(`… ${e.phase}`);
+        if (e.type === 'note') console.log(`! ${e.message}`);
         if (e.type === 'run') console.log(`${e.ok ? '✓' : '✗'} [${e.done}/${e.total}] ${e.url} · ${e.profileId} · run ${e.run}: ${e.ok ? `score ${e.score}` : e.error} · conditions ${e.envVerdict}${e.nonIdeal.length ? ` (${e.nonIdeal.join('; ')})` : ''}`);
       },
     });

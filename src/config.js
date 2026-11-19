@@ -59,7 +59,7 @@ const BUILT_IN_PROFILES = [
 export const DEFAULT_CONFIG = {
   outputDir: 'output',
   defaultProfileId: NATIVE_PROFILE_ID,
-  defaults: { runs: 5, cooldownSec: 10, cache: 'cold', warmup: false, categories: ['performance'] },
+  defaults: { runs: 5, cooldownSec: 10, cache: 'cold', warmup: false, headless: true, categories: ['performance'] },
   probes: {
     // Host for latency/jitter probes. null = use the first target URL's host.
     latencyHost: null,
@@ -77,8 +77,10 @@ export const DEFAULT_CONFIG = {
     packetLossPct: { warn: 1, poor: 5 },
     downloadMbps: { warn: 20, poor: 5 },
     wifiSignalDbm: { warn: -70, poor: -80 },
+    otherBrowserCpuPct: { warn: 10, poor: 40 },
   },
-  regression: { scorePoints: 5, lcpPct: 10, tbtPct: 15, clsAbs: 0.02, fcpPct: 10, siPct: 10 },
+  // minChangeMs is the noise floor: a time metric must also move by at least this much to count.
+  regression: { scorePoints: 5, lcpPct: 10, tbtPct: 15, clsAbs: 0.02, fcpPct: 10, siPct: 10, minChangeMs: 50 },
   profiles: [NATIVE_PROFILE, ...BUILT_IN_PROFILES],
 };
 

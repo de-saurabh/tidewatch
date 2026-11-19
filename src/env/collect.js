@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import si from 'systeminformation';
+import { collectBrowserInfo, collectProxyVpn, summarizeBrowserProcesses } from './browser.js';
 import { platformProbes } from './platform.js';
 import { median, round, sleep } from '../util.js';
 
@@ -121,15 +122,11 @@ async function probeWifi() {
   return c ? { signalDbm: c.signalLevel } : null;
 }
 
-async function topProcesses(n = 3) {
-  const p = await safe(() => si.processes(), null);
-  if (!p) return [];
-  return p.list
-    .filter((x) => x.pid !== process.pid && x.cpu > 5)
-    .sort((a, b) => b.cpu - a.cpu)
-    .slice(0, n)
-    .map((x) => ({ name: x.name, cpuPct: round(x.cpu, 0) }));
-}
+const topProcesses = (list, n = 3) => list
+  .filter((x) => x.pid !== process.pid && x.cpu > 5)
+  .sort((a, b) => b.cpu - a.cpu)
+  .slice(0, n)
+  .map((x) => ({ name: x.name, cpuPct: round(x.cpu, 0) }));
 
 /**
  * Snapshot of the machine. `light` skips the slow probes (throughput, Wi-Fi, process list)
@@ -159,14 +156,26 @@ export async function collectSnapshot({ light = false, latencyHost = null, throu
       net,
       downloadMbps: null,
       wifi: null,
+      browser: null,
+      proxyVpn: null,
+      otherBrowsers: null,
     },
     topProcesses: [],
   };
   if (!light) {
-    const [dl, wifi, procs] = await Promise.all([probeDownload(throughputUrl), probeWifi(), topProcesses()]);
+    const [dl, wifi, procs, browser, proxyVpn] = await Promise.all([
+      probeDownload(throughputUrl),
+      probeWifi(),
+      safe(() => si.processes(), null),
+      safe(() => collectBrowserInfo()),
+      safe(() => collectProxyVpn()),
+    ]);
     snapshot.raw.downloadMbps = dl;
     snapshot.raw.wifi = wifi;
-    snapshot.topProcesses = procs;
+    snapshot.raw.browser = browser;
+    snapshot.raw.proxyVpn = proxyVpn;
+    snapshot.raw.otherBrowsers = procs ? summarizeBrowserProcesses(procs.list) : null;
+    snapshot.topProcesses = procs ? topProcesses(procs.list) : [];
   }
   return snapshot;
 }

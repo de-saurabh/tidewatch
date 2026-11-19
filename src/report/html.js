@@ -44,6 +44,8 @@ table{border-collapse:collapse;width:100%;min-width:720px}
 th{background:#F8F9FB;font-size:12px;color:#566070;text-align:left;padding:10px 14px;border-bottom:1px solid #E1E4EA}
 td{padding:11px 14px;border-bottom:1px solid #F0F2F5;vertical-align:top;font-size:14px}
 tr:last-child td{border-bottom:0}tr.median td{background:#F3F6FF}
+td.grp{background:#F8F9FB;font-size:12px;font-weight:600;color:#566070}
+dl.facts{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:6px 20px;font-size:14px}dl.facts dt{color:#566070}dl.facts dd{margin:0;overflow-wrap:anywhere}
 a{color:#2848D6}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 ul.cmp{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
 @media print{body{background:#fff}section{break-inside:avoid}}
@@ -53,11 +55,16 @@ function envTable(batch) {
   const b = batch.envBefore.verdict.checks;
   const a = batch.envAfter?.verdict.checks ?? [];
   const rank = { Ideal: 0, 'Not assessed': 0, Warning: 1, Poor: 2 };
-  const rows = b.map((c) => {
+  const groups = { machine: 'Machine', browser: 'Browser and network path' };
+  const rows = [];
+  let last = null;
+  for (const c of b) {
+    const group = c.group ?? 'machine';
+    if (group !== last) { rows.push(`<tr><td class="grp" colspan="4">${h(groups[group] ?? group)}</td></tr>`); last = group; }
     const after = a.find((x) => x.id === c.id);
     const worst = after && rank[after.status] > rank[c.status] ? after.status : c.status;
-    return `<tr><td>${h(c.label)}</td><td class="mono">${h(c.display)}</td><td class="mono">${h(after?.display ?? '–')}</td><td>${pill(worst)}</td></tr>`;
-  });
+    rows.push(`<tr><td>${h(c.label)}</td><td class="mono">${h(c.display)}</td><td class="mono">${h(after?.display ?? '–')}</td><td>${pill(worst)}</td></tr>`);
+  }
   return `<div class="scroll"><table><thead><tr><th>Check</th><th>Before the batch</th><th>After the batch</th><th>Worst</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
 
@@ -86,6 +93,34 @@ function conditionsBanner(batch) {
       <p class="muted" style="margin:0">Snapshots are also stored per run, so the CSV records the exact conditions each result was measured in.</p></section>`;
 }
 
+function browserSection(batch) {
+  const b = batch.browser;
+  const runs = batch.runs.filter((r) => r.browser);
+  const clean = runs.filter((r) => r.cleanIssues.length === 0).length;
+  const issues = [...new Set(runs.flatMap((r) => r.cleanIssues))];
+  const channel = { stable: 'Chrome', chromium: 'Chromium', 'chrome-for-testing': 'Chrome for Testing', beta: 'Chrome Beta', dev: 'Chrome Dev', canary: 'Chrome Canary', unknown: 'Chrome' }[b?.channel] ?? 'Chrome';
+  const cache = batch.options.cache === 'cold' ? 'cache and storage cleared before each load' : 'warm cache kept between runs';
+  const facts = [
+    ['Browser', b?.found ? `${channel} ${b.version ?? '(version unknown)'}` : 'not found'],
+    ['Mode', batch.options.headless ? 'Headless' : 'Headed (visible window)'],
+    ['Architecture', b?.binArchs?.length ? `${b.binArchs.join(' + ')} build on ${b.hardwareArch ?? 'unknown'} hardware` : 'unknown'],
+    ['Managed policies', b?.policies?.length ? b.policies.join(', ') : 'none'],
+    ['Clean slate', runs.length ? `${clean} of ${runs.length} runs verified: fresh temp profile, no extension targets detected, ${cache}` : 'not verified'],
+  ];
+  return `<section><h2>Browser</h2>
+    <dl class="facts">${facts.map(([k, v]) => `<dt>${h(k)}</dt><dd>${h(v)}</dd>`).join('')}</dl>
+    ${issues.length ? `<p style="margin:0;color:#7A4B00;background:#FFF0CF;border-radius:8px;padding:10px 14px">The clean slate was not fully met: ${h(issues.join('; '))}.</p>` : ''}
+    ${batch.modeNote ? `<p class="muted" style="margin:0">${h(batch.modeNote)}</p>` : ''}</section>`;
+}
+
+function warningsSection(batch) {
+  const counts = new Map();
+  for (const r of batch.runs) for (const w of new Set(r.warnings ?? [])) counts.set(w, (counts.get(w) ?? 0) + 1);
+  if (!counts.size) return '';
+  const items = [...counts].map(([w, n]) => `<li>${h(w)} <span class="muted">(${n} of ${batch.runs.length} runs)</span></li>`).join('');
+  return `<section><h2>Lighthouse warnings</h2><p class="muted" style="margin:0">Lighthouse flagged these while running. They can mean a result is unreliable.</p><ul style="margin:0;padding-left:20px">${items}</ul></section>`;
+}
+
 function resultsTable(medianRows) {
   const body = medianRows.map((r) => {
     const degraded = r.runs_degraded ?? 0;
@@ -111,7 +146,7 @@ function runsTable(batch, rows) {
     const head = `${list[0].url} · ${list[0].profile_name}`;
     const trs = list.map((r) => {
       const rec = batch.runs.find((x) => x.url === r.url && x.profileId === r.profile_id && x.run === r.run);
-      const bad = rec.envStart.checks.filter((c) => c.status === 'Warning' || c.status === 'Poor').map((c) => `${c.label} ${c.display}`);
+      const bad = [...rec.envStart.checks.filter((c) => c.status === 'Warning' || c.status === 'Poor').map((c) => `${c.label} ${c.display}`), ...(rec.cleanIssues ?? []).map((i) => `clean slate: ${i}`)];
       const link = rec.files ? `<a href="${h(rec.files.html)}">Open full report</a>` : `<span class="muted">${h(rec.error ?? 'failed')}</span>`;
       return `<tr class="${r.is_median_run ? 'median' : ''}"><td class="mono">Run ${r.run}${r.is_median_run ? ' · median' : ''}</td><td>${rec.ok ? scoreCell(r.perf_score) : pill('Poor')}</td>
         <td class="mono">${secs(r.lcp_ms)}</td><td class="mono">${secs(r.tbt_ms)}</td>
@@ -129,7 +164,7 @@ export function comparisonSection(c) {
     const change = r.key === 'perf_score' || r.key === 'cls' ? `${sign}${Math.abs(r.delta)}` : `${r.pct > 0 ? '+' : r.pct < 0 ? '−' : ''}${Math.abs(r.pct ?? 0)}%`;
     return `<tr><td><span class="mono">${h(r.url)}</span><div class="muted" style="font-size:12px">${h(r.profileName)} · ${h(r.metric)}</div></td>
       <td class="mono">${fmt(r, r.baseline)}</td><td class="mono">${fmt(r, r.current)}</td><td class="mono"><b>${change}</b></td>
-      <td>${pill(r.status)}<div class="muted" style="font-size:12px">${h(r.note)}${r.unreliable && r.status === 'Regressed' ? ', treat as unreliable' : ''}</div></td></tr>`;
+      <td>${pill(r.status)}<div class="muted" style="font-size:12px">${h(r.note)}${r.belowFloor ? ` · change is below the ${r.floorMs} ms noise floor` : ''}${r.unreliable && r.status === 'Regressed' ? ', treat as unreliable' : ''}</div></td></tr>`;
   });
   const notes = c.comparability.map((x) => `<li class="row">${pill(x.status)}<span>${h(x.text)}</span></li>`).join('');
   const unmatched = [...c.baselineOnly.map((x) => `In baseline only: ${x.url} · ${x.profileId}`), ...c.currentOnly.map((x) => `In this batch only: ${x.url} · ${x.profileId}`)];
@@ -148,10 +183,12 @@ export function renderReportHtml(batch, rows) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Lighthouse batch ${h(batch.id)}</title><style>${CSS}</style></head><body><main>
 <header><h1>Batch report</h1>
-<p class="muted" style="margin:6px 0 0">${h(when(batch.startedAt))} · ${batch.runs.length} runs${dur} · ${o.urls.length} URL${o.urls.length > 1 ? 's' : ''} × ${o.profileIds.length} profile${o.profileIds.length > 1 ? 's' : ''} × ${o.runs} runs · ${h(o.cache)} cache${batch.status === 'cancelled' ? ' · <b>cancelled early</b>' : ''}</p>
+<p class="muted" style="margin:6px 0 0">${h(when(batch.startedAt))} · ${batch.runs.length} runs${dur} · ${o.urls.length} URL${o.urls.length > 1 ? 's' : ''} × ${o.profileIds.length} profile${o.profileIds.length > 1 ? 's' : ''} × ${o.runs} runs · ${h(o.cache)} cache · ${o.headless === false ? 'headed' : 'headless'}${batch.status === 'cancelled' ? ' · <b>cancelled early</b>' : ''}</p>
 <p class="muted" style="margin:4px 0 0">${h(batch.envBefore.snapshot.host.os)} ${h(batch.envBefore.snapshot.host.osVersion)} · ${h(batch.envBefore.snapshot.host.cpuModel)} · ${batch.envBefore.snapshot.host.ramGb} GB · ${h(medians[0]?.chrome_version ? `Chrome ${medians[0].chrome_version}` : '')} · Lighthouse ${h(medians[0]?.lighthouse_version ?? '')}</p>
 <p style="margin:10px 0 0"><a href="results.csv" download>results.csv</a> (usable as a baseline) · <a href="batch.json">batch.json</a></p></header>
 ${conditionsBanner(batch)}
+${browserSection(batch)}
+${warningsSection(batch)}
 ${batch.comparison ? comparisonSection(batch.comparison) : ''}
 <section><h2>Results · median of ${o.runs} runs</h2><p class="muted" style="margin:0">Score bands: 90–100 good, 50–89 needs work, below 50 poor.</p>${resultsTable(medians)}</section>
 <section><h2>Individual runs</h2>${runsTable(batch, rows)}</section>

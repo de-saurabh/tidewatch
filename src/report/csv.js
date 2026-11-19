@@ -14,6 +14,7 @@ export const COLUMNS = [
   'os', 'os_version', 'arch', 'cpu_model', 'cpu_cores', 'ram_gb',
   'chrome_version', 'lighthouse_version', 'benchmark_index',
   'form_factor', 'throttling_method', 'rtt_ms', 'download_kbps', 'cpu_slowdown', 'cache_mode', 'run_warnings',
+  'browser_mode', 'browser_channel', 'browser_arch', 'browser_policies', 'extensions_loaded', 'clean_profile',
 ];
 
 function encodeCell(value) {
@@ -61,6 +62,7 @@ const NUMERIC = new Set([
   'speed_index_ms', 'transfer_kb', 'requests', 'runs_ok', 'runs_degraded', 'perf_score_stddev', 'lcp_min_ms', 'lcp_max_ms',
   'battery_pct', 'cpu_load_pct', 'free_mem_gb', 'latency_ms', 'jitter_ms', 'packet_loss_pct', 'download_mbps_before',
   'download_mbps_after', 'cpu_cores', 'ram_gb', 'benchmark_index', 'rtt_ms', 'download_kbps', 'cpu_slowdown', 'run_warnings',
+  'browser_policies', 'extensions_loaded',
 ]);
 
 const REQUIRED = ['schema_version', 'row_type', 'url', 'profile_id', 'perf_score', 'lcp_ms', 'cls', 'tbt_ms', 'fcp_ms', 'speed_index_ms'];

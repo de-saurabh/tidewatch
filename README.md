@@ -45,6 +45,9 @@ a real regression from a noisy afternoon.
 | | |
 |---|---|
 | **Honest conditions** | Power, power saver, CPU load, memory, thermal state, latency, jitter, connection failures, throughput and Wi-Fi signal are measured before the batch, before every run, and after the batch. Each is graded Ideal, Warning, Poor or Not assessed |
+| **Browser checks** | Which Chrome it is (version, channel, packaging), whether its architecture matches the hardware, managed policies, other Chrome processes competing for the machine, and proxy or VPN. A Poor or Warning here is as visible as a busy CPU |
+| **Verified clean slate** | Every run starts a fresh, empty profile with extensions disabled, and Tidewatch checks it: extension targets, profile location and headless or headed mode are confirmed against the running browser, not assumed |
+| **Headless or headed** | Choose per batch. The mode is recorded in the CSV and a mismatch with the baseline is flagged |
 | **Never blocks** | A bad environment doesn't stop the run. It is stamped on the report and in every CSV row, so a result from a noisy machine is always visibly marked |
 | **Bulk, serial, repeatable** | URLs × profiles × N runs with a cooldown between runs. Serial on purpose: parallel runs distort each other. Medians, min/max and spread, cold or warm cache |
 | **Environment profiles** | A ladder from fiber desktop to low-end phone on Slow 3G, plus a read-only profile that uses **this machine exactly as it is**. Fully customisable: device, network, CPU slowdown, locale, timezone, color scheme, headers, blocked URLs |
@@ -124,6 +127,16 @@ Nothing is stored inside the app. Each batch is a folder; your history is whatev
 <sub><sup>1</sup> needs `powerprofilesctl`. <sup>2</sup> only where the kernel exposes a temperature. <sup>3</sup> macOS may withhold it without location permission.
 Anything unavailable is shown as **Not assessed** and does not count against the verdict.</sub>
 
+Browser and network path, checked before and after every batch:
+
+| Check | What it catches |
+|---|---|
+| Browser | Chrome not found, or a Beta, Dev or Canary build, or a Snap or Flatpak package |
+| Browser architecture | An Intel build on Apple Silicon (or x64 on Windows ARM): Chrome would run under translation and slow down |
+| Managed policies | Enterprise policies, which apply even to a fresh profile. Read from the managed-preferences plist (macOS), policy folders (Linux) or the registry (Windows) |
+| Other Chrome processes | Chrome windows already running and using CPU or memory |
+| Proxy and VPN | A configured proxy or connected VPN, which add latency and variance |
+
 The overall verdict is **Ideal**, **Acceptable** (any warning) or **Poor** (any poor). Every threshold is editable.
 
 ## Profiles
@@ -143,12 +156,37 @@ Built in, ordered fastest to slowest. The first is the default.
 Add, edit, duplicate or delete any profile except *This machine*, and choose a different default on the Profiles page.
 Results from *This machine* reflect that hardware, so compare them only with baselines recorded on the same machine.
 
+## Browser and clean slate
+
+Every run launches its own Chrome with a brand-new temporary profile: no cookies, history, logins or extensions from
+your everyday browser. Extensions are switched off explicitly, background networking and updates are disabled, and
+Lighthouse clears cache and storage before each cold load.
+
+Tidewatch then checks the result instead of trusting it. For every run it asks the running browser over the DevTools
+HTTP endpoint and records:
+
+- whether any extension targets are loaded,
+- whether the profile is a fresh temp folder,
+- whether it is really running headless or headed, as requested.
+
+The report's **Browser** card summarises this ("8 of 8 runs verified"), and anything that breaks the promise is named
+and lifts the batch verdict to at least Acceptable. If a check can't be performed, the run says so rather than
+claiming a clean result.
+
+**Headless or headed** is a per-batch choice (UI option, or `--headed` on the CLI). Headed uses the real window and
+display path, so leave the machine alone while it runs. On Linux without a display, Tidewatch falls back to headless and says so.
+Headless and headed results differ slightly, so don't mix them in one baseline; the comparison warns if you do.
+
 ## Baselines
 
 1. **Run a batch.** It writes `results.csv`.
 2. **Keep the CSV** wherever you like. It is the baseline.
 3. **Later, upload it** on the New run page or the Baseline compare page. Results are matched by URL and profile, and each metric is
    marked **Regressed**, **Improved** or **Within threshold** using your regression thresholds.
+
+Small changes are not flagged. A time metric has to move by the configured percentage **and** by at least the noise
+floor (50 ms by default, `regression.minChangeMs`), so 1 ms to 0 ms is never an "Improved −100%". Changes that cleared the
+percentage but not the floor are shown as within threshold, with a note.
 
 The CSV is self-describing: it carries a schema version, Lighthouse and Chrome versions, OS, CPU, the throttling settings,
 and the conditions each run started under. That is what lets the comparison tell you when it can't be trusted.
@@ -165,7 +203,8 @@ env_verdict_start, env_verdict_batch_before, env_verdict_batch_after,
 on_ac, battery_pct, power_saver, cpu_load_pct, free_mem_gb, thermal, latency_ms, jitter_ms, packet_loss_pct,
 download_mbps_before, download_mbps_after, os, os_version, arch, cpu_model, cpu_cores, ram_gb,
 chrome_version, lighthouse_version, benchmark_index, form_factor, throttling_method, rtt_ms, download_kbps,
-cpu_slowdown, cache_mode, run_warnings`
+cpu_slowdown, cache_mode, run_warnings, browser_mode, browser_channel, browser_arch, browser_policies,
+extensions_loaded, clean_profile`
 
 </details>
 
@@ -178,6 +217,7 @@ node src/cli.js env                                   # check this machine
 node src/cli.js profiles                              # list profiles
 node src/cli.js run --url https://example.com         # uses the default profile
 node src/cli.js run --url https://example.com --profile desktop-cable --profile moto-g-slow-4g --runs 5
+node src/cli.js run --url https://example.com --headed   # visible browser window
 node src/cli.js run --url https://example.com --baseline output/<batch>/results.csv
 node src/cli.js compare --baseline old.csv --current new.csv
 ```
@@ -203,7 +243,8 @@ regression thresholds, run defaults and probe settings. Edit it by hand or in th
 ## Notes and limits
 
 - Public `http(s)` URLs only. No authentication flows yet.
-- Uses the Chrome installed on the machine. Its version is recorded per row and checked against the baseline.
+- Uses the Chrome installed on the machine. Its version, channel and architecture are recorded and checked against the baseline.
+- The extension check looks for extension targets exposed by the DevTools endpoint. It confirms the clean slate; it is not a security audit.
 - The throughput check downloads 10 MB from a public speed-test endpoint. Set `probes.throughputUrl` to `null` to disable it.
 - Developed and hand-tested on macOS. The Linux and Windows probes are exercised by CI but have not been tried on real desktops yet.
 - Windows exposes no reliable thermal signal, so that check is Not assessed there.

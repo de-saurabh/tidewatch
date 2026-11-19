@@ -91,7 +91,7 @@ function comparisonHtml(c, heading) {
     const change = r.key === 'perf_score' || r.key === 'cls' ? `${sign(r.delta)}${Math.abs(r.delta)}` : `${sign(r.pct)}${Math.abs(r.pct ?? 0)}%`;
     return `<tr><td><span class="mono small">${esc(r.url)}</span><div class="muted small">${esc(r.profileName)} · ${esc(r.metric)}</div></td>
       <td class="mono">${fmt(r.baseline)}</td><td class="mono">${fmt(r.current)}</td><td class="mono"><b>${change}</b></td>
-      <td>${pill(r.status)}<div class="muted small">${esc(r.note)}${r.unreliable && r.status === 'Regressed' ? ', treat as unreliable' : ''}</div></td></tr>`;
+      <td>${pill(r.status)}<div class="muted small">${esc(r.note)}${r.belowFloor ? ` · below the ${r.floorMs} ms noise floor` : ''}${r.unreliable && r.status === 'Regressed' ? ', treat as unreliable' : ''}</div></td></tr>`;
   }).join('');
   const unmatched = [...c.baselineOnly.map((x) => `In baseline only: ${x.url} · ${x.profileId}`), ...c.currentOnly.map((x) => `In current results only: ${x.url} · ${x.profileId}`)];
   return `<div class="notice ${c.comparable ? '' : 'warn'}" style="flex-direction:column">
@@ -122,10 +122,14 @@ function envCardHtml() {
     <div class="row">${S.env ? `<span class="muted small">Checked ${esc(new Date(S.env.snapshot.takenAt).toLocaleTimeString())}</span>` : ''}<button class="btn" data-act="env" ${S.envBusy || S.progress?.status === 'running' ? 'disabled' : ''}>${S.envBusy ? 'Checking…' : 'Re-check'}</button></div></div>`;
   if (!S.env) return `${head}<p class="muted">${S.envBusy ? 'Measuring CPU, memory, power and network. This takes about 6 seconds.' : 'No measurement yet.'}</p>`;
   const h = S.env.snapshot.host;
-  const checks = S.env.verdict.checks.map((c) => `<div class="check"><div class="top"><span>${esc(c.label)}</span>${pill(c.status)}</div><div class="val">${esc(c.display)}</div><div class="muted small">${esc(c.rule)}</div></div>`).join('');
+  const card = (c) => `<div class="check"><div class="top"><span>${esc(c.label)}</span>${pill(c.status)}</div><div class="val">${esc(c.display)}</div><div class="muted small">${esc(c.rule)}</div></div>`;
+  const group = (name, title) => {
+    const list = S.env.verdict.checks.filter((c) => (c.group ?? 'machine') === name);
+    return list.length ? `<h3 class="muted">${title}</h3><div class="checks">${list.map(card).join('')}</div>` : '';
+  };
   return `${head}
     <div class="row mono small muted" style="gap:8px 20px"><span>${esc(h.os)} ${esc(h.osVersion)} · ${esc(h.arch)}</span><span>${esc(h.cpuModel)}</span><span>${h.cpuCores} cores</span><span>${h.ramGb} GB RAM</span>${h.environmentType !== 'host' ? `<span>${esc(h.environmentType)}</span>` : ''}</div>
-    <div class="checks">${checks}</div>
+    ${group('machine', 'Machine')}${group('browser', 'Browser and network path')}
     <p class="muted small">Thresholds are editable under Settings. A check the OS cannot provide shows as Not assessed and never counts as a failure.</p>`;
 }
 
@@ -174,6 +178,7 @@ function applyEvent(e) {
   const p = S.progress;
   if (!p) return;
   if (e.type === 'phase') p.phase = e.phase;
+  if (e.type === 'note') p.log.push({ text: `! ${e.message}` });
   if (e.type === 'env') p.log.push({ text: `Environment before the batch: ${e.verdict}` });
   if (e.type === 'run') {
     p.done = e.done;
@@ -216,6 +221,7 @@ async function startRun() {
     cooldownSec: o.cooldownSec,
     cache: o.cache,
     warmup: o.warmup,
+    headless: o.headless !== false,
     baselineCsv: S.baseline?.csv ?? null,
     baselineName: S.baseline?.name ?? null,
   };
@@ -253,6 +259,10 @@ function pageRun() {
           <label class="choice"><input type="radio" name="cache" data-opt="cache" value="cold" ${S.opts.cache === 'cold' ? 'checked' : ''}>Cold</label>
           <label class="choice"><input type="radio" name="cache" data-opt="cache" value="warm" ${S.opts.cache === 'warm' ? 'checked' : ''}>Warm (one discarded warm-up per URL)</label>
           <label class="choice"><input type="checkbox" data-opt="warmup" ${S.opts.warmup ? 'checked' : ''}>Discard a first run</label></div></fieldset>
+        <fieldset><legend>Browser</legend><div class="row">
+          <label class="choice"><input type="radio" name="mode" data-opt="headless" value="true" ${S.opts.headless !== false ? 'checked' : ''}>Headless</label>
+          <label class="choice"><input type="radio" name="mode" data-opt="headless" value="false" ${S.opts.headless === false ? 'checked' : ''}>Headed (visible window)</label></div>
+          <span class="muted small">Every run uses a fresh profile with extensions disabled. Headed uses the real window and display path, so leave the machine alone while it runs. Don't mix headless and headed results in one baseline.</span></fieldset>
         <div class="field"><span class="legend">Compare against a baseline CSV (optional)</span><div id="baselineArea"></div></div>
         <div class="sum" id="sum"></div></section>
     </div>`;
@@ -466,9 +476,9 @@ async function runCompare() {
 const THRESHOLD_LABELS = {
   cpuLoadPct: ['CPU load (%)', 'above'], freeMemGb: ['Free memory (GB)', 'below'], thermalSpeedLimitPct: ['CPU speed limit under thermal throttling (%)', 'below'],
   thermalTempC: ['CPU temperature (°C), where speed limit is unavailable', 'above'], latencyMs: ['Latency (ms)', 'above'], jitterMs: ['Jitter (ms)', 'above'],
-  packetLossPct: ['Connection failures (%)', 'above'], downloadMbps: ['Download throughput (Mbps)', 'below'], wifiSignalDbm: ['Wi-Fi signal (dBm)', 'below'],
+  packetLossPct: ['Connection failures (%)', 'above'], otherBrowserCpuPct: ['Other Chrome processes: CPU (%)', 'above'], downloadMbps: ['Download throughput (Mbps)', 'below'], wifiSignalDbm: ['Wi-Fi signal (dBm)', 'below'],
 };
-const REGRESSION_LABELS = { scorePoints: 'Score drop (points)', lcpPct: 'LCP increase (%)', tbtPct: 'TBT increase (%)', clsAbs: 'CLS increase (absolute)', fcpPct: 'FCP increase (%)', siPct: 'Speed Index increase (%)' };
+const REGRESSION_LABELS = { scorePoints: 'Score drop (points)', lcpPct: 'LCP increase (%)', tbtPct: 'TBT increase (%)', clsAbs: 'CLS increase (absolute)', fcpPct: 'FCP increase (%)', siPct: 'Speed Index increase (%)', minChangeMs: 'Noise floor: ignore time changes under (ms)' };
 
 function pageSettings() {
   const c = S.config;
@@ -480,6 +490,7 @@ function pageSettings() {
     <section class="card"><h2>Output</h2>${t('outputDir', 'Output folder', 'Relative paths resolve from the project folder. Each batch gets its own subfolder.')}</section>
     <section class="card"><h2>Run defaults</h2><div class="row">${n('defaults.runs', 'Runs per URL')}${n('defaults.cooldownSec', 'Cooldown (s)')}</div>
       <div class="row"><label class="choice"><input type="radio" name="dc" data-sv="defaults.cache" value="cold" ${c.defaults.cache === 'cold' ? 'checked' : ''}>Cold cache</label><label class="choice"><input type="radio" name="dc" data-sv="defaults.cache" value="warm" ${c.defaults.cache === 'warm' ? 'checked' : ''}>Warm cache</label>
+      <label class="choice"><input type="checkbox" data-sc="defaults.headless" ${c.defaults.headless !== false ? 'checked' : ''}>Headless by default</label>
       ${cats.map(([id, l]) => `<label class="choice"><input type="checkbox" data-dcat="${id}" ${c.defaults.categories.includes(id) ? 'checked' : ''}>${l}</label>`).join('')}</div></section>
     <section class="card"><h2>Network probes</h2><div class="row">${t('probes.latencyHost', 'Latency host', 'Blank = the first target URL. Probed by opening TCP connections.')}${t('probes.throughputUrl', 'Throughput download URL', 'Blank disables the check. The default downloads 10 MB from a public speed-test endpoint.')}</div></section>
     <section class="card"><h2>Environment thresholds</h2>
@@ -554,7 +565,7 @@ function onFieldChange(e) {
     store.set('opts', S.opts);
   } else if (t.dataset.opt) {
     const k = t.dataset.opt;
-    S.opts[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Number(t.value) : t.value;
+    S.opts[k] = k === 'headless' ? t.value === 'true' : t.type === 'checkbox' ? t.checked : t.type === 'number' ? Number(t.value) : t.value;
     store.set('opts', S.opts);
     $('#sum').innerHTML = summaryHtml();
   } else if (t.dataset.preset) {
